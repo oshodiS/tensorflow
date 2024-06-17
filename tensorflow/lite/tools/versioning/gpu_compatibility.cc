@@ -626,6 +626,10 @@ absl::Status CheckGpuDelegateCompatibility(const OpSignature& op_sig,
       return absl::OkStatus();
     }
 
+    case kTfLiteBuiltinEmbeddingLookup: {
+      return absl::OkStatus();
+    }
+
     case kTfLiteBuiltinDynamicUpdateSlice: {
       if (op_sig.inputs.size() != 3) {
         return absl::UnimplementedError(
