@@ -48,6 +48,7 @@ limitations under the License.
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/compiler/mlir/init_mlir.h"
 #include "tensorflow/compiler/mlir/lite/common/tfl_pass_config.h"
+#include "tensorflow/compiler/mlir/lite/core/light_model_builder.h"
 #include "tensorflow/compiler/mlir/lite/flatbuffer_export_flags.h"
 #include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
 #include "tensorflow/compiler/mlir/lite/tf_tfl_translate_cl.h"
@@ -61,7 +62,6 @@ limitations under the License.
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/public/session.h"
-#include "tensorflow/lite/model_builder.h"
 
 using mlir::MLIRContext;
 using mlir::ModuleOp;
@@ -89,7 +89,7 @@ static int PrintFunctionResultMapping(const std::string &result,
   // Build model from the resultant string to extract the return values from
   // their source of truth.
   auto model =
-      tflite::FlatBufferModel::BuildFromBuffer(result.data(), result.size());
+      mlir::LightFlatBufferModel::BuildFromBuffer(result.data(), result.size());
   if (!model) return kTrFailure;
 
   // Get an unknown location for where we don't have a terminator to get the
