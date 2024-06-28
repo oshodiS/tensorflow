@@ -375,6 +375,41 @@ absl::StatusOr<IrEmitter2::KernelInfo> IrEmitter2::EmitDotHostKernel(
                  se::ThreadDim()});
 }
 
+absl::StatusOr<IrEmitter2::KernelInfo> IrEmitter2::EmitConcatenateHostKernel(
+    const HloInstruction* instr) {
+  VLOG(2) << "Emit concatenate host kernel: " << instr->name();
+
+  // TODO(paruzelp): Should I rewrite CanDoFastConcatenate to IrEmitter2?
+  //                 If so, should I translate `ShouldEmitParallelLoopFor` to
+  //                 something along the lines of:
+  //                 ```
+  //                 !concatenate->parent()
+  //                          ->root_instruction()
+  //                          ->backend_config<BackendConfig>()
+  //                          ->outer_dimension_partitions()
+  //                          .empty()
+  //                 ```
+  const auto fast_impl_reason = nested_ir_emitter_->CanDoFastConcatenate(instr);
+  if (fast_impl_reason.ok()) {
+    VLOG(1) << "Emitting fast concatenate for " << instr->ToString() << ": "
+            << fast_impl_reason.message();
+    KernelPrototype kernel_prototype = EmitKernelPrototype(instr);
+    llvm::IRBuilder<> ir_builder(module_->getContext());
+    ir_builder.SetInsertPoint(
+        kernel_prototype.function->getEntryBlock().getTerminator());
+
+    llvm_ir::IrArray output_array = kernel_prototype.results[0];
+    TF_RETURN_IF_ERROR(::xla::cpu::EmitFastConcatenate(
+        instr, kernel_prototype.arguments, output_array, module_, ir_builder));
+    return kernels_.emplace_back(
+        KernelInfo{kernel_prototype.function->getName().str(), se::BlockDim(),
+                   se::ThreadDim()});
+  }
+  VLOG(1) << "Could not emit fast concatenate for " << instr->ToString() << ": "
+          << fast_impl_reason.message();
+  return EmitElementalHostKernel(instr);
+}
+
 absl::StatusOr<IrEmitter2::KernelInfo> IrEmitter2::EmitDotFusionHostKernel(
     const HloFusionInstruction* fusion) {
   VLOG(2) << "Emit dot fusion host kernel: " << fusion->name();

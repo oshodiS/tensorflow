@@ -119,6 +119,10 @@ class IrEmitter2 {
   // thunk that calls into libraries.
   absl::StatusOr<KernelInfo> EmitDotHostKernel(const HloInstruction* instr);
 
+  // Emits a host kernel for the given concatenate instruction.
+  absl::StatusOr<KernelInfo> EmitConcatenateHostKernel(
+      const HloInstruction* instr);
+
   // Emits a host kernel for the given dot fusion instruction (output fusion).
   absl::StatusOr<KernelInfo> EmitDotFusionHostKernel(
       const HloFusionInstruction* fusion);
