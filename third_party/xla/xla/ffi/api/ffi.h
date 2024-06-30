@@ -72,6 +72,41 @@ inline std::ostream& operator<<(std::ostream& os, const DataType dtype) {
   return os << static_cast<XLA_FFI_DataType>(dtype);
 }
 
+constexpr size_t ByteWidth(DataType dtype) {
+  switch (dtype) {
+    case DataType::INVALID:
+    case DataType::TOKEN:
+      return 0;
+    case DataType::PRED:
+      return 1;
+    case DataType::S8:
+    case DataType::U8:
+    case DataType::F8E5M2:
+    case DataType::F8E4M3FN:
+    case DataType::F8E4M3B11FNUZ:
+    case DataType::F8E5M2FNUZ:
+    case DataType::F8E4M3FNUZ:
+      return 1;
+    case DataType::S16:
+    case DataType::U16:
+    case DataType::F16:
+    case DataType::BF16:
+      return 2;
+    case DataType::S32:
+    case DataType::U32:
+    case DataType::F32:
+      return 4;
+    case DataType::S64:
+    case DataType::U64:
+    case DataType::F64:
+      return 8;
+    case DataType::C64:
+      return 8;
+    case DataType::C128:
+      return 16;
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Span is non-owning view into contiguous values of type `T`.
 //===----------------------------------------------------------------------===//
@@ -161,14 +196,41 @@ class Error {
 //
 // No checks are done at decoding time. Any dtype and rank combination is
 // accepted.
-struct AnyBuffer {
-  DataType dtype;
-  void* data;
-  Span<const int64_t> dimensions;
+class AnyBuffer {
+ public:
+  using Dimensions = Span<const int64_t>;
+
+  explicit AnyBuffer(const XLA_FFI_Buffer* buf) : buf_(buf) {}
+
+  inline XLA_FFI_ATTRIBUTE_ALWAYS_INLINE DataType element_type() const;
+  inline XLA_FFI_ATTRIBUTE_ALWAYS_INLINE Dimensions dimensions() const;
+  inline XLA_FFI_ATTRIBUTE_ALWAYS_INLINE size_t element_count() const;
+  inline XLA_FFI_ATTRIBUTE_ALWAYS_INLINE void* untyped_data() const;
+  inline XLA_FFI_ATTRIBUTE_ALWAYS_INLINE size_t size_bytes() const;
+
+ private:
+  const XLA_FFI_Buffer* buf_;
 };
 
-// Deprecated. Use `AnyBuffer` instead.
-using BufferBase = AnyBuffer;
+DataType AnyBuffer::element_type() const { return DataType(buf_->dtype); }
+
+AnyBuffer::Dimensions AnyBuffer::dimensions() const {
+  return Dimensions(buf_->dims, buf_->rank);
+}
+
+size_t AnyBuffer::element_count() const {
+  size_t element_count = 1;
+  for (int64_t i = 0; i < buf_->rank; ++i) {
+    element_count *= buf_->dims[i];
+  }
+  return element_count;
+}
+
+void* AnyBuffer::untyped_data() const { return buf_->data; }
+
+size_t AnyBuffer::size_bytes() const {
+  return ByteWidth(element_type()) * element_count();
+}
 
 namespace internal {
 
@@ -283,15 +345,9 @@ template <DataType dtype> using BufferR3 = Buffer<dtype, 3>;
 template <DataType dtype> using BufferR4 = Buffer<dtype, 4>;
 // clang-format on
 
-using Token = BufferR0<DataType::TOKEN>;
+using Token = BufferR0<DataType::TOKEN>;  // NOLINT
 
 namespace internal {
-
-inline XLA_FFI_ATTRIBUTE_ALWAYS_INLINE AnyBuffer
-DecodeBuffer(XLA_FFI_Buffer* buf) {
-  return AnyBuffer{static_cast<DataType>(buf->dtype), buf->data,
-                   Span<const int64_t>(buf->dims, buf->rank)};
-}
 
 template <DataType dtype, size_t rank>
 XLA_FFI_ATTRIBUTE_ALWAYS_INLINE std::optional<Buffer<dtype, rank>> DecodeBuffer(
@@ -317,7 +373,6 @@ XLA_FFI_ATTRIBUTE_ALWAYS_INLINE std::optional<Buffer<dtype, rank>> DecodeBuffer(
 
 }  // namespace internal
 
-using ResultBufferBase = Result<AnyBuffer>;
 template <DataType dtype, size_t rank = internal::kDynamicRank>
 using ResultBuffer = Result<Buffer<dtype, rank>>;
 
@@ -377,7 +432,7 @@ struct ArgDecoding<AnyBuffer> {
       return diagnostic.Emit("Wrong argument type: expected ")
              << XLA_FFI_ArgType_BUFFER << " but got " << type;
     }
-    return internal::DecodeBuffer(reinterpret_cast<XLA_FFI_Buffer*>(arg));
+    return AnyBuffer(reinterpret_cast<XLA_FFI_Buffer*>(arg));
   }
 };
 
@@ -417,7 +472,7 @@ struct RetDecoding<AnyBuffer> {
       return diagnostic.Emit("Wrong result type: expected ")
              << XLA_FFI_RetType_BUFFER << " but got " << type;
     }
-    return internal::DecodeBuffer(reinterpret_cast<XLA_FFI_Buffer*>(ret));
+    return AnyBuffer(reinterpret_cast<XLA_FFI_Buffer*>(ret));
   }
 };
 
